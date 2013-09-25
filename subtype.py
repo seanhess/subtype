@@ -10,7 +10,7 @@ from . import util
 interface_manager = InterfaceManager()
 error_manager = ErrorManager(interface_manager)
 
-def get_errors(view, tss=None):
+def get_errors(view=None, tss=None):
 	#Getting the interface before actually running the code,
 	#so it won't do anything if the interface is closed before
 	#really_get_errors is ran, this prevents us from getting
@@ -26,14 +26,13 @@ def get_errors(view, tss=None):
 	#The views are updated separatelly from the errors so it is
 	#guaranteed that every view of the project will be updated
 	#before the error getter kicks in.
-	util.debounce(tss.update, 1, 'update' + str(view.id()), view)
+	if view:
+		util.debounce(tss.update, 1, 'update' + str(view.id()), view)
 	util.debounce(really_get_errors, 1.5, 'get_errors' + str(hash(tss)))
 
 
 #This will ensure that every view that is added is properly
 #updated and checked for errors.
-interface_manager.on_view_added = get_errors
-interface_manager.on_view_removed = error_manager.clear_view
 
 
 def update_status_message(view):
@@ -89,6 +88,16 @@ def on_file_type_change(view):
 
 	elif not util.is_typescript(view) and interface_manager.get(view):
 		interface_manager.remove(view)
+
+
+def on_file_rename(old_tss, new_tss):
+	interface_manager.reload(old_tss)
+	get_errors(tss=old_tss)
+
+
+interface_manager.on_view_added = get_errors
+interface_manager.on_view_removed = error_manager.clear_view
+interface_manager.on_file_rename = on_file_rename
 
 
 class SubtypeListener(sublime_plugin.EventListener):

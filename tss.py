@@ -68,7 +68,7 @@ class TSSInterface():
 
 	def reload(self):
 		self._run('reload')
-		self.files = [f for f in self._run('files') if not f.startswith(path.dirname(tss_file))]
+		self.files = [f for f in self._run('files') if not f.startswith(to_tss_path(path.dirname(tss_file)))]
 
 
 	def get_errors(self):
@@ -119,7 +119,7 @@ class TSSInterface():
 class InterfaceCollection():
 
 	def __init__(self, interfaces):
-		self.interfaces = interfaces
+		self.interfaces = interfaces.copy()
 
 
 	def __getattr__(self, name):
@@ -165,6 +165,7 @@ class InterfaceManager():
 		#Events triggered on some actions.
 		self.on_view_added = None
 		self.on_view_removed = None
+		self.on_file_rename = None
 
 		self._lock = threading.RLock()
 
@@ -289,7 +290,12 @@ class InterfaceManager():
 		f = self.file_by_view[view.id()]
 
 		if path != f.path:
+			old_interface = InterfaceCollection(f.interfaces)
 			self.remove(view)
+
+			if self.on_file_rename:
+				self.on_file_rename(old_interface)
+
 			return self.add(view)
 
 		return InterfaceCollection(f.interfaces)
@@ -297,6 +303,9 @@ class InterfaceManager():
 
 	def reload(self, interface_collection):
 		for interface in interface_collection.interfaces:
+			if interface._closed:
+				continue
+
 			old_paths = set(interface.files)
 			interface.reload()
 			new_paths = set(interface.files)
