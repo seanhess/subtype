@@ -109,7 +109,7 @@ class SubtypeListener(sublime_plugin.EventListener):
 	@util.typescript_view
 	def on_post_save_async(self, view):
 		tss = interface_manager.get(view)
-		# interface_manager.reload(tss)
+		interface_manager.reload(tss)
 
 
 	@util.typescript_view

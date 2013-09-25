@@ -201,10 +201,14 @@ class InterfaceManager():
 			f.interfaces.remove(interface)
 
 			if not len(f.interfaces):
-				for view in f.views.copy():
+				views = f.views.copy()
+				for view in views:
 					self.remove(view)
 
 				del self.file_by_path[path]
+
+				for view in views:
+					self.add(view)
 
 
 	def create_interface(self, root_path):
