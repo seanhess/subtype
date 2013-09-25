@@ -3,12 +3,14 @@ import sublime
 
 from functools import partial
 
-from .tss import InterfaceManager
+from .tss import InterfaceManager, InterfaceCollection
 from .errors import ErrorManager
+from .watcher import ModuleWatcher
 from . import util
 
 interface_manager = InterfaceManager()
 error_manager = ErrorManager(interface_manager)
+module_watcher = ModuleWatcher()
 
 def get_errors(view=None, tss=None):
 	#Getting the interface before actually running the code,
@@ -21,6 +23,9 @@ def get_errors(view=None, tss=None):
 	def really_get_errors():
 		results = tss.get_errors()
 		for interface, errors in results:
+			module_errors = [e for e in errors if e['code'] == 'TS2071']
+			module_watcher.set_errors(interface, module_errors)
+
 			error_manager.parse(errors, interface)
 
 	#The views are updated separatelly from the errors so it is
@@ -29,10 +34,6 @@ def get_errors(view=None, tss=None):
 	if view:
 		util.debounce(tss.update, 1, 'update' + str(view.id()), view)
 	util.debounce(really_get_errors, 1.5, 'get_errors' + str(hash(tss)))
-
-
-#This will ensure that every view that is added is properly
-#updated and checked for errors.
 
 
 def update_status_message(view):
@@ -95,9 +96,18 @@ def on_file_rename(old_tss, new_tss):
 	get_errors(tss=old_tss)
 
 
+def on_module_change(tss):
+	tss = InterfaceCollection([tss])
+	interface_manager.reload(tss)
+	get_errors(tss=tss)
+
+
 interface_manager.on_view_added = get_errors
 interface_manager.on_view_removed = error_manager.clear_view
 interface_manager.on_file_rename = on_file_rename
+interface_manager.on_interface_closed = module_watcher.clear_interface
+
+module_watcher.on_module_change = on_module_change
 
 
 class SubtypeListener(sublime_plugin.EventListener):
@@ -117,8 +127,7 @@ class SubtypeListener(sublime_plugin.EventListener):
 
 	@util.typescript_view
 	def on_post_save_async(self, view):
-		tss = interface_manager.get(view)
-		interface_manager.reload(tss)
+		get_errors(view)
 
 
 	@util.typescript_view
@@ -149,6 +158,6 @@ def plugin_loaded():
 				sublime.set_timeout_async(partial(interface_manager.add, view), 0)
 
 
-
 def plugin_unloaded():
 	interface_manager.close_all()
+	module_watcher.close_all()

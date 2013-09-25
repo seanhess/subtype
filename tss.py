@@ -163,6 +163,7 @@ class InterfaceManager():
 		self.active_paths_by_interface = {}
 
 		#Events triggered on some actions.
+		self.on_interface_closed = None
 		self.on_view_added = None
 		self.on_view_removed = None
 		self.on_file_rename = None
@@ -225,6 +226,9 @@ class InterfaceManager():
 
 		del self.active_paths_by_interface[interface]
 		interface._close()
+
+		if self.on_interface_closed:
+			self.on_interface_closed(interface)
 
 
 	def relative_interfaces(self, interface):
@@ -292,11 +296,12 @@ class InterfaceManager():
 		if path != f.path:
 			old_interface = InterfaceCollection(f.interfaces)
 			self.remove(view)
+			new_interface = self.add(view)
 
 			if self.on_file_rename:
-				self.on_file_rename(old_interface)
+				self.on_file_rename(old_interface, new_interface)
 
-			return self.add(view)
+			return new_interface
 
 		return InterfaceCollection(f.interfaces)
 
