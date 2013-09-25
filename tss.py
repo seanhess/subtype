@@ -116,146 +116,200 @@ class TSSInterface():
 		self._run('update {0} {1}\n{2}'.format(lines, file_name, content))
 
 
+class InterfaceCollection():
+
+	def __init__(self, interfaces):
+		self.interfaces = interfaces
+
+
+	def __getattr__(self, name):
+		def virtualfunc(*args, **kargs):
+			results = []
+			for interface in self.interfaces:
+				func = getattr(interface, name)
+				results.append(tuple([interface, func(*args, **kargs)]))
+
+			return results
+
+		return virtualfunc
+
+
+	def __getitem__(self, key):
+		return self.interfaces[key]
+
+
+	def __hash__(self):
+		xor = 0
+		for interface in self.interfaces:
+			xor ^= hash(interface)
+
+		return xor
+
+
+class TSSFile():
+
+	def __init__(self, path, interface):
+		self.path = path
+		self.interfaces = [interface]
+		self.views = []
+
 
 class InterfaceManager():
 
 	def __init__(self):
-		#Used to keep track of active interfaces.
-		self.interfaces = {} #{Path : Interface}
-		self.files = {} #{Interface : Active Paths}
-		self.views = {} #{Path : Open Views}
+		self.file_by_path = {}
+		self.file_by_view = {}
 
-		#Used to keep track of original view filenames.
-		self.view_filenames = {}
+		self.active_paths_by_interface = {}
 
 		#Events triggered on some actions.
 		self.on_view_added = None
+		self.on_view_removed = None
 
 		self._lock = threading.RLock()
 
 
-	def get(self, view): #get_interface
-		path = to_tss_path(view.file_name())
+	def add_interface(self, interface, paths):
+		new_paths = set(paths)
+		for path in new_paths:
+			f = self.file_by_path.get(path)
 
-		#If a file is renamed remove and add it again so the
-		#manager reflects it's new path, perhaps should create
-		#a rename event, so the consumer can reload an interface
-		#if there is a file rename.
-		if view.id() in self.view_filenames and path != self.view_filenames[view.id()]: #Handle file renaming
-			self.remove(view)
-			self.add(view)
-			return self.get(view)
+			if f:
+				f.interfaces.append(interface)
 
-		if path in self.interfaces:
-			return self.interfaces[path]
+				for conflicting in f.interfaces:
+					if conflicting == interface:
+						continue
+
+					conflicting_paths = self.active_paths_by_interface[conflicting]
+					for conflicting_path in (new_paths & conflicting_paths):
+						self.active_paths_by_interface[interface].add(conflicting_path)
+
+					if new_paths.issuperset(conflicting_paths):
+						self.close_interface(conflicting)
+
+				for view in f.views:
+					if self.on_view_added:
+						self.on_view_added(view, InterfaceCollection([interface]))
+			else:
+				self.file_by_path[path] = TSSFile(path, interface)
 
 
-	def create_interface(self, view):
-		path = to_tss_path(view.file_name())
+	def remove_interface(self, interface, paths):
+		for path in paths:
+			f = self.file_by_path[path]
+			f.interfaces.remove(interface)
 
+			if not len(f.interfaces):
+				for view in f.views.copy():
+					self.remove(view)
+
+				del self.file_by_path[path]
+
+
+	def create_interface(self, root_path):
 		interface = TSSInterface()
-		interface._connect(path)
+		interface._connect(root_path)
 
-		#Save in temporary variables so it will not currupt
-		#the state if the loop stops in the middle.
-		new_interfaces = {}
-		new_views = {}
-
-		for f in interface.files:
-			conflicting_interface = self.interfaces.get(f)
-			if conflicting_interface:
-				interface._close()
-
-				files = set(interface.files)
-				conflicting_files = set(conflicting_interface.files)
-
-				if files.issuperset(conflicting_files):
-					return self.reload(conflicting_interface, view)
-				else:
-					#Should probably handle this in a way that
-					#two instances can share a single view.
-					raise Exception('File conflict between two instances: ' + f)
-
-			new_interfaces[f] = interface
-			new_views[f] = []
-
-		self.interfaces.update(new_interfaces)
-		self.views.update(new_views)
-
-		self.files[interface] = set()
-
-		return interface
+		self.active_paths_by_interface[interface] = set()
+		self.add_interface(interface, interface.files)
 
 
-	def add(self, view): #add_view
-		if view.id() in self.view_filenames:
-			raise Exception('Tried to add already handled view')
+	def close_interface(self, interface):
+		self.remove_interface(interface, interface.files)
+
+		del self.active_paths_by_interface[interface]
+		interface._close()
+
+
+	def relative_interfaces(self, interface):
+		relative_interfaces = set()
+		for path in interface.files:
+			f = self.file_by_path[path]
+			relative_interfaces.update(set(f.interfaces))
+
+		relative_interfaces.remove(interface)
+		return relative_interfaces
+
+
+	def add(self, view):
+		if view.id() in self.file_by_view:
+			raise Exception('Tried adding already handled view')
 
 		with self._lock:
 			path = to_tss_path(view.file_name())
-			self.view_filenames[view.id()] = path
 
-			if path in self.interfaces:
-				interface = self.interfaces[path]
-			else:
-				interface = self.create_interface(view)
+			if path not in self.file_by_path:
+				self.create_interface(path)
 
-			#Keep track of active interface files so we can close the
-			#interface when there are no more active files
-			self.files[interface].add(path)
-			self.views[path].append(view)
+			f = self.file_by_path[path]
+			f.views.append(view)
+			self.file_by_view[view.id()] = f
+
+			for interface in f.interfaces:
+				self.active_paths_by_interface[interface].add(path)
 
 		if self.on_view_added:
-			self.on_view_added(view, interface)
+			self.on_view_added(view, InterfaceCollection(f.interfaces))
 
-		return interface
+		return InterfaceCollection(f.interfaces)
 
 
-	def remove(self, view): #remove_view
+	def remove(self, view):
 		with self._lock:
-			#The file path may have changed since it was added, so
-			#we need to remove the references to it's original path.
-			path = self.view_filenames[view.id()]
-			interface = self.interfaces[path]
+			f = self.file_by_view[view.id()]
+			del self.file_by_view[view.id()]
 
-			self.views[path].remove(view)
-			del self.view_filenames[view.id()]
+			f.views.remove(view)
 
-			#If there are no more views poiting to a certain file,
-			#the file is no longer active, if there are no active
-			#files in an interface, that interface is not being used
-			#and can be closed.
-			if not len(self.views[path]):
-				self.files[interface].remove(path)
+			if not len(f.views):
+				for interface in f.interfaces.copy():
+					active_paths = self.active_paths_by_interface[interface]
+					active_paths.remove(f.path)
 
-				if not len(self.files[interface]):
-					del self.files[interface]
+					if not len(active_paths):
+						self.close_interface(interface)
 
-					for f in interface.files:
-						del self.interfaces[f]
-						del self.views[f]
+					else:
+						relative_interfaces = self.relative_interfaces(interface)
+						for relative in relative_interfaces:
+							if self.active_paths_by_interface[relative].issuperset(active_paths):
+								self.close_interface(interface)
 
-					interface._close()
+		if self.on_view_removed:
+			self.on_view_removed(view)
 
 
-	#This method has two use cases, to reload an interface and update
-	#the manager state, and to rebase an interface around a view that
-	#contains it's new root, it probably should be split when I implement
-	#a reload based on TSS's reload.
-	def reload(self, interface, root=None):
-		views = []
+	def get(self, view):
+		path = to_tss_path(view.file_name())
+		f = self.file_by_view[view.id()]
 
-		for f in self.files[interface]:
-			views += self.views[f]
-
-		for view in views:
+		if path != f.path:
 			self.remove(view)
+			return self.add(view)
 
-		new_interface = None
-		if root:
-			new_interface = self.create_interface(root)
+		return InterfaceCollection(f.interfaces)
 
-		for view in views:
-			self.add(view)
 
-		return new_interface
+	def reload(self, interface_collection):
+		for interface in interface_collection.interfaces:
+			old_paths = set(interface.files)
+			interface.reload()
+			new_paths = set(interface.files)
+
+			added_paths = new_paths - old_paths
+			removed_paths = old_paths - new_paths
+
+			self.remove_interface(interface, removed_paths)
+			self.add_interface(interface, added_paths)
+
+
+	def close_all(self):
+		all_views = []
+		for f in self.file_by_path.values():
+			for view in f.views:
+				if view not in all_views:
+					all_views.append(view)
+
+		for view in all_views:
+			self.remove(view)

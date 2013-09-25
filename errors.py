@@ -18,9 +18,10 @@ class ErrorManager():
 
 		self.clear_interface(interface)
 
-		for e in errors:
-			views = self.interface_manager.views[e['file']]
+		errors_by_path = {}
 
+		for e in errors:
+			views = self.interface_manager.file_by_path[e['file']].views
 			if not len(views):
 				continue
 
@@ -30,29 +31,28 @@ class ErrorManager():
 			end = view.text_point(*e['end'])
 			e['region'] = sublime.Region(start, end)
 
-			for view in views:
-				if view not in all_views:
-					all_views.append(view)
+			if e['file'] not in errors_by_path:
+				errors_by_path[e['file']] = []
 
-		for view in all_views:
-			view_errors = [e for e in errors if path.samefile(e['file'], view.file_name())]
-			self.errors_by_viewid[view.id()] = view_errors
+			errors_by_path[e['file']].append(e)
 
-			illegals = [e['region'] for e in view_errors if e['level'] == 'illegal']
-			warnings = [e['region'] for e in view_errors if e['level'] == 'warning']
+		for path in self.interface_manager.active_paths_by_interface.get(interface, []):
+			path_errors = errors_by_path.get(path, [])
+			illegals = [e['region'] for e in path_errors if e['level'] == 'illegal']
+			warnings = [e['region'] for e in path_errors if e['level'] == 'warning']
 
-			draw_style = sublime.DRAW_STIPPLED_UNDERLINE | sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE
+			for view in self.interface_manager.file_by_path[path].views:
+				self.errors_by_viewid[view.id()] = path_errors
 
-			view.add_regions('typescript-illegal', illegals, 'sublimelinter.outline.illegal', illegal_icon, draw_style)
-			view.add_regions('typescript-warning', warnings, 'sublimelinter.outline.warning', warning_icon, draw_style)
+				draw_style = sublime.DRAW_STIPPLED_UNDERLINE | sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE
+
+				view.add_regions('typescript-illegal', illegals, 'sublimelinter.outline.illegal', illegal_icon, draw_style)
+				view.add_regions('typescript-warning', warnings, 'sublimelinter.outline.warning', warning_icon, draw_style)
 
 
 	def clear_interface(self, interface):
-		#There is the possibility of the interface already being
-		#closed before this is ran, so the manager has no views
-		#associated with it, in that case we do nothing.
-		for f in self.interface_manager.files.get(interface, []):
-			for view in self.interface_manager.views[f]:
+		for path in self.interface_manager.active_paths_by_interface.get(interface, []):
+			for view in self.interface_manager.file_by_path[path].views:
 				self.clear_view(view)
 
 

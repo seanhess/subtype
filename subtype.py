@@ -19,19 +19,21 @@ def get_errors(view, tss=None):
 		tss = interface_manager.get(view)
 
 	def really_get_errors():
-		errors = tss.get_errors()
-		error_manager.parse(errors, tss)
+		results = tss.get_errors()
+		for interface, errors in results:
+			error_manager.parse(errors, interface)
 
 	#The views are updated separatelly from the errors so it is
 	#guaranteed that every view of the project will be updated
 	#before the error getter kicks in.
 	util.debounce(tss.update, 1, 'update' + str(view.id()), view)
-	util.debounce(really_get_errors, 1.5, 'get_errors' + str(id(tss)))
+	util.debounce(really_get_errors, 1.5, 'get_errors' + str(hash(tss)))
 
 
 #This will ensure that every view that is added is properly
 #updated and checked for errors.
 interface_manager.on_view_added = get_errors
+interface_manager.on_view_removed = error_manager.clear_view
 
 
 def update_status_message(view):
@@ -46,7 +48,7 @@ def update_status_message(view):
 
 completions_by_view = {}
 def update_completions(view):
-	tss = interface_manager.get(view)
+	tss = interface_manager.get(view)[0]
 	pos = util.get_cursor_rowcol(view)
 
 	util.remove_debounce('update' + str(view.id()))
@@ -87,7 +89,6 @@ def on_file_type_change(view):
 
 	elif not util.is_typescript(view) and interface_manager.get(view):
 		interface_manager.remove(view)
-		error_manager.clear_view(view)
 
 
 class SubtypeListener(sublime_plugin.EventListener):
@@ -108,13 +109,12 @@ class SubtypeListener(sublime_plugin.EventListener):
 	@util.typescript_view
 	def on_post_save_async(self, view):
 		tss = interface_manager.get(view)
-		interface_manager.reload(tss)
+		# interface_manager.reload(tss)
 
 
 	@util.typescript_view
 	def on_close(self, view):
 		interface_manager.remove(view)
-		error_manager.clear_view(view)
 
 
 	@util.typescript_view
@@ -142,6 +142,4 @@ def plugin_loaded():
 
 
 def plugin_unloaded():
-	for interface in set(interface_manager.interfaces.values()):
-		interface._close()
-		error_manager.clear_interface(interface)
+	interface_manager.close_all()
