@@ -48,14 +48,9 @@ class Watcher(Thread):
         for item in files:
             r_path = join(self.target, item)
 
-            if not item.startswith(('.', '_')):
-                if item not in self.prevfiles:
-                    changed.append(r_path)
+            if not item.startswith(('.', '_')) and item not in self.prevfiles:
+                changed.append(r_path)
 
-            if item in self.prevfiles:
-                self.prevfiles.remove(item)
-
-        changed.extend([join(self.target, i) for i in self.prevfiles])
         self.prevfiles = files
         return changed
 
