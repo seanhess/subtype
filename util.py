@@ -8,7 +8,7 @@ def get_cursor_rowcol(view):
     return view.rowcol(view.sel()[0].a)
 
 def is_typescript(view):
-    return view.file_name() and view.settings().get('syntax') == 'Packages/TypeScript/TypeScript.tmLanguage'
+    return view.file_name() and view.settings().get('syntax').lower().endswith('typescript.tmlanguage')
 
 def typescript_view(f):
     def call_f(self, view, *args, **kargs):
