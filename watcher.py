@@ -1,10 +1,8 @@
 import time
 
 from threading import Thread
-from os import walk, listdir
-from os.path import isfile, join, getctime, getmtime, dirname, normpath, exists
-from datetime import datetime, timedelta
-
+from os import listdir
+from os.path import join, dirname, normpath, exists
 
 class Watcher(Thread):
 
@@ -45,17 +43,13 @@ class Watcher(Thread):
 
     def changed_files(self):
         changed = []
-        past = datetime.today() - timedelta(seconds=self.interval)
 
         files = listdir(self.target)
         for item in files:
             r_path = join(self.target, item)
 
             if not item.startswith(('.', '_')):
-                if isfile(r_path) and past < datetime.fromtimestamp(getmtime(r_path)):
-                    changed.append(r_path)
-
-                elif item not in self.prevfiles:
+                if item not in self.prevfiles:
                     changed.append(r_path)
 
             if item in self.prevfiles:
