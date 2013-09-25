@@ -1,6 +1,9 @@
 from os import path
 import threading
 
+def norm_path(p):
+    return path.normcase(path.normpath(path.abspath(p))).replace('\\', '/')
+
 def get_cursor_rowcol(view):
     return view.rowcol(view.sel()[0].a)
 

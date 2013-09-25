@@ -151,6 +151,7 @@ class SubtypeListener(sublime_plugin.EventListener):
 
 
 
+
 def plugin_loaded():
     for window in sublime.windows():
         for view in window.views():

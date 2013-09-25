@@ -4,16 +4,9 @@ import subprocess
 import json
 import time
 from os import path
-from .util import get_cursor_rowcol
+from .util import get_cursor_rowcol, norm_path
 
-base_dir = path.dirname(path.abspath(__file__))
-tss_file = path.join(base_dir, 'tss\\tss.js')
-
-
-def to_tss_path(p):
-    p = path.abspath(p).replace('\\', '/')
-    return p[0].lower() + p[1:]
-
+tss_file = path.join(path.dirname(path.abspath(__file__)), 'tss', 'tss.js')
 
 class TSSInterface():
 
@@ -31,10 +24,10 @@ class TSSInterface():
         self._process = subprocess.Popen(['node', tss_file, root_file], stdin=subprocess.PIPE, stdout=subprocess.PIPE, startupinfo=si)
         result = self._process.stdout.readline().decode('utf-8')
 
-        if result != '"loaded {0}, TSS listening.."\n'.format(root_file):
+        if result.lower() != '"loaded {0}, TSS listening.."\n'.format(root_file).lower():
             raise Exception('Invalid file ' + root_file)
 
-        self.files = [f for f in self._run('files') if not f.startswith(to_tss_path(path.dirname(tss_file)))]
+        self.files = [norm_path(f) for f in self._run('files')]
 
 
     def _close(self):
@@ -68,7 +61,7 @@ class TSSInterface():
 
     def reload(self):
         self._run('reload')
-        self.files = [f for f in self._run('files') if not f.startswith(to_tss_path(path.dirname(tss_file)))]
+        self.files = [norm_path(f) for f in self._run('files')]
 
 
     def get_errors(self):
@@ -99,7 +92,7 @@ class TSSInterface():
         if not col:
             row, col = get_cursor_rowcol(view)
 
-        file_name = to_tss_path(view.file_name())
+        file_name = norm_path(view.file_name())
         result = self._run('completions false {0} {1} {2}'.format(row + 1, col + 1, file_name))
 
         if result:
@@ -111,7 +104,7 @@ class TSSInterface():
     def update(self, view):
         content = view.substr(sublime.Region(0, view.size()))
         lines = len(content.split('\n'))
-        file_name = to_tss_path(view.file_name())
+        file_name = norm_path(view.file_name())
 
         self._run('update {0} {1}\n{2}'.format(lines, file_name, content))
 
@@ -148,9 +141,9 @@ class InterfaceCollection():
 
 class TSSFile():
 
-    def __init__(self, path, interface):
+    def __init__(self, path):
         self.path = path
-        self.interfaces = [interface]
+        self.interfaces = set()
         self.views = []
 
 
@@ -173,28 +166,26 @@ class InterfaceManager():
 
     def add_interface(self, interface, paths):
         new_paths = set(paths)
+        active_paths = self.active_paths_by_interface[interface]
+
         for path in new_paths:
             f = self.file_by_path.get(path)
 
-            if f:
-                f.interfaces.append(interface)
+            if not f:
+                f = self.file_by_path[path] = TSSFile(path)
 
-                for conflicting in f.interfaces:
-                    if conflicting == interface:
-                        continue
+            f.interfaces.add(interface)
 
-                    conflicting_paths = self.active_paths_by_interface[conflicting]
-                    for conflicting_path in (new_paths & conflicting_paths):
-                        self.active_paths_by_interface[interface].add(conflicting_path)
-
-                    if new_paths.issuperset(conflicting_paths):
-                        self.close_interface(conflicting)
+            if f.views:
+                active_paths.add(path)
 
                 for view in f.views:
                     if self.on_view_added:
                         self.on_view_added(view, InterfaceCollection([interface]))
-            else:
-                self.file_by_path[path] = TSSFile(path, interface)
+
+        for relative in self.relative_interfaces(interface):
+            if active_paths.issuperset(self.active_paths_by_interface[relative]):
+                self.close_interface(relative)
 
 
     def remove_interface(self, interface, paths):
@@ -235,7 +226,7 @@ class InterfaceManager():
         relative_interfaces = set()
         for path in interface.files:
             f = self.file_by_path[path]
-            relative_interfaces.update(set(f.interfaces))
+            relative_interfaces.update(f.interfaces)
 
         relative_interfaces.remove(interface)
         return relative_interfaces
@@ -246,7 +237,7 @@ class InterfaceManager():
             raise Exception('Tried adding already handled view')
 
         with self._lock:
-            path = to_tss_path(view.file_name())
+            path = norm_path(view.file_name())
 
             if path not in self.file_by_path:
                 self.create_interface(path)
@@ -290,7 +281,7 @@ class InterfaceManager():
 
 
     def get(self, view):
-        path = to_tss_path(view.file_name())
+        path = norm_path(view.file_name())
         f = self.file_by_view[view.id()]
 
         if path != f.path:
