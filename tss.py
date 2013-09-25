@@ -282,7 +282,10 @@ class InterfaceManager():
 
     def get(self, view):
         path = norm_path(view.file_name())
-        f = self.file_by_view[view.id()]
+        f = self.file_by_view.get(view.id())
+
+        if not f:
+            return None
 
         if path != f.path:
             old_interface = InterfaceCollection(f.interfaces)
