@@ -156,9 +156,11 @@ class InterfaceManager():
         self.active_paths_by_interface = {}
 
         #Events triggered on some actions.
-        self.on_interface_closed = None
         self.on_view_added = None
         self.on_view_removed = None
+
+        self.on_file_added = None
+        self.on_file_removed = None
         self.on_file_rename = None
 
         self._lock = threading.RLock()
@@ -173,6 +175,9 @@ class InterfaceManager():
 
             if not f:
                 f = self.file_by_path[path] = TSSFile(path)
+
+                if self.on_file_added:
+                    self.on_file_added(f)
 
             f.interfaces.append(interface)
 
@@ -200,6 +205,9 @@ class InterfaceManager():
 
                 del self.file_by_path[path]
 
+                if self.on_file_removed:
+                    self.on_file_removed(f)
+
                 for view in views:
                     self.add(view)
 
@@ -217,9 +225,6 @@ class InterfaceManager():
 
         del self.active_paths_by_interface[interface]
         interface._close()
-
-        if self.on_interface_closed:
-            self.on_interface_closed(interface)
 
 
     def relative_interfaces(self, interface):
@@ -256,6 +261,9 @@ class InterfaceManager():
 
 
     def remove(self, view):
+        if self.on_view_removed:
+            self.on_view_removed(view)
+
         with self._lock:
             f = self.file_by_view[view.id()]
             del self.file_by_view[view.id()]
@@ -276,8 +284,22 @@ class InterfaceManager():
                             if self.active_paths_by_interface[relative].issuperset(active_paths):
                                 self.close_interface(interface)
 
-        if self.on_view_removed:
-            self.on_view_removed(view)
+
+    def rename(self, f):
+        old_interface = InterfaceCollection(f.interfaces)
+        new_interface = None
+
+        views = f.views.copy()
+        for view in views:
+            self.remove(view)
+
+        for view in views:
+            new_interface = self.add(view)
+
+        if self.on_file_rename:
+            self.on_file_rename(old_interface, new_interface)
+
+        return new_interface
 
 
     def get(self, view):
@@ -288,14 +310,7 @@ class InterfaceManager():
             return None
 
         if path != f.path:
-            old_interface = InterfaceCollection(f.interfaces)
-            self.remove(view)
-            new_interface = self.add(view)
-
-            if self.on_file_rename:
-                self.on_file_rename(old_interface, new_interface)
-
-            return new_interface
+            return self.rename(f)
 
         return InterfaceCollection(f.interfaces)
 
@@ -325,3 +340,15 @@ class InterfaceManager():
 
         for view in all_views:
             self.remove(view)
+
+
+    def get_active_paths(self, interface):
+        return self.active_paths_by_interface.get(interface, [])
+
+
+    def get_views(self, path):
+        f = self.file_by_path.get(path)
+        if f:
+            return f.views
+        else:
+            return []

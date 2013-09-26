@@ -104,8 +104,11 @@ def on_module_change(tss):
 
 interface_manager.on_view_added = get_errors
 interface_manager.on_view_removed = error_manager.clear_view
+
+interface_manager.on_file_added = error_manager.add_file
+interface_manager.on_file_removed = error_manager.remove_file
+
 interface_manager.on_file_rename = on_file_rename
-interface_manager.on_interface_closed = module_watcher.clear_interface
 
 module_watcher.on_module_change = on_module_change
 
@@ -128,6 +131,7 @@ class SubtypeListener(sublime_plugin.EventListener):
     @util.typescript_view
     def on_post_save_async(self, view):
         get_errors(view)
+        error_manager.list_errors()
 
 
     @util.typescript_view
