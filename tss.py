@@ -143,7 +143,7 @@ class TSSFile():
 
     def __init__(self, path):
         self.path = path
-        self.interfaces = set()
+        self.interfaces = []
         self.views = []
 
 
@@ -174,7 +174,7 @@ class InterfaceManager():
             if not f:
                 f = self.file_by_path[path] = TSSFile(path)
 
-            f.interfaces.add(interface)
+            f.interfaces.append(interface)
 
             if f.views:
                 active_paths.add(path)
@@ -226,7 +226,7 @@ class InterfaceManager():
         relative_interfaces = set()
         for path in interface.files:
             f = self.file_by_path[path]
-            relative_interfaces.update(f.interfaces)
+            relative_interfaces.update(set(f.interfaces))
 
         relative_interfaces.remove(interface)
         return relative_interfaces
