@@ -72,7 +72,7 @@ class ErrorManager():
                     self.clear_view(view)
 
                 if path not in self.errors_by_path:
-                    print('estranho isso em')
+                    raise Exception('Handling errors for unkown file')
 
                 self.errors_by_path[path] = []
 
