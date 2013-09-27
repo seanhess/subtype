@@ -195,7 +195,7 @@ class InterfaceManager():
 
                 for view in f.views:
                     if self.on_view_added:
-                        self.on_view_added(view, InterfaceCollection([interface]))
+                        self.on_view_added(view, f, InterfaceCollection([interface]))
 
         for relative in self.relative_interfaces(interface):
             if active_paths.issuperset(self.active_paths_by_interface[relative]):
@@ -264,17 +264,17 @@ class InterfaceManager():
                 self.active_paths_by_interface[interface].add(path)
 
         if self.on_view_added:
-            self.on_view_added(view, InterfaceCollection(f.interfaces))
+            self.on_view_added(view, f, InterfaceCollection(f.interfaces))
 
         return InterfaceCollection(f.interfaces)
 
 
     def remove(self, view):
+        f = self.file_by_view[view.id()]
         if self.on_view_removed:
-            self.on_view_removed(view)
+            self.on_view_removed(view, f)
 
         with self._lock:
-            f = self.file_by_view[view.id()]
             del self.file_by_view[view.id()]
 
             f.views.remove(view)
@@ -361,3 +361,7 @@ class InterfaceManager():
             return f.views
         else:
             return []
+
+
+    def get_file(self, view):
+        return self.file_by_view.get(view.id())

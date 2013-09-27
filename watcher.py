@@ -135,9 +135,6 @@ class ModuleWatcher():
         self.add_paths(interface, added_paths)
         self.remove_paths(interface, removed_paths)
 
-        if added_paths and self.on_module_change:
-                self.on_module_change(interface)
-
 
     def clear_interface(self, interface):
         self.remove_paths(interface, self.paths_by_interface.get(interface, []).copy())
