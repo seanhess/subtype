@@ -3,10 +3,10 @@ import threading
 import subprocess
 import json
 import time
-from os import path
+import os
 from .util import get_cursor_rowcol, norm_path
 
-tss_file = path.join(path.dirname(path.abspath(__file__)), 'tss', 'tss.js')
+tss_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tss', 'tss.js')
 
 class TSSInterface():
 
@@ -18,10 +18,19 @@ class TSSInterface():
 
 
     def _connect(self, root_file):
-        si = subprocess.STARTUPINFO()
-        si.dwFlags = subprocess.STARTF_USESHOWWINDOW
+        args = []
+        kwargs = {}
 
-        self._process = subprocess.Popen(['node', tss_file, root_file], stdin=subprocess.PIPE, stdout=subprocess.PIPE, startupinfo=si)
+        args.append(['node', tss_file, root_file])
+        kwargs['stdin'] = subprocess.PIPE
+        kwargs['stdout'] = stdout=subprocess.PIPE
+
+        if os.name == 'nt':
+            si = subprocess.STARTUPINFO()
+            si.dwFlags = subprocess.STARTF_USESHOWWINDOW
+            kwargs['startupinfo'] = si
+
+        self._process = subprocess.Popen(*args, **kwargs)
         result = self._process.stdout.readline().decode('utf-8')
 
         if result.lower() != '"loaded {0}, TSS listening.."\n'.format(root_file).lower():
@@ -116,11 +125,11 @@ class InterfaceCollection():
 
 
     def __getattr__(self, name):
-        def virtualfunc(*args, **kargs):
+        def virtualfunc(*args, **kwargs):
             results = []
             for interface in self.interfaces:
                 func = getattr(interface, name)
-                results.append(tuple([interface, func(*args, **kargs)]))
+                results.append(tuple([interface, func(*args, **kwargs)]))
 
             return results
 
